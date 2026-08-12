@@ -1,0 +1,148 @@
+name: Fork - sync upstream
+
+# Opens a PR merging the newest upstream release tag into main.
+# A conflict fails the job on purpose: a half-merged branch pushed by
+# automation is worse than a red run telling a human to do the merge.
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'  # Mondays
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Upstream ref to merge (default: newest upstream tag)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: fork-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Merge upstream
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/netboxlabs/netbox-mcp-server.git
+          git fetch --tags upstream
+
+      - name: Pick upstream ref
+        id: pick
+        env:
+          REQUESTED_REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          if [ -n "${REQUESTED_REF}" ]; then
+            ref="${REQUESTED_REF}"
+          else
+            # -V, never `tail` on API order: the tag list is not semver-sorted.
+            # Release tags only: our own v*-writes.* tags must not be picked.
+            ref="$(git tag --list 'v*' --merged upstream/main | grep -v -- '-writes' | sort -u -V | tail -1)"
+          fi
+          [ -n "$ref" ] || { echo "no upstream ref resolved"; exit 1; }
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "branch=chore/upstream-$ref" >> "$GITHUB_OUTPUT"
+          echo "Upstream ref: $ref"
+
+      - name: Already merged?
+        id: state
+        run: |
+          set -euo pipefail
+          if git merge-base --is-ancestor "${{ steps.pick.outputs.ref }}" origin/main; then
+            echo "Nothing to do: ${{ steps.pick.outputs.ref }} is already in main."
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup uv
+        if: steps.state.outputs.needed == 'true'
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Merge upstream into a branch
+        if: steps.state.outputs.needed == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git checkout -B "${{ steps.pick.outputs.branch }}" origin/main
+          if ! git merge --no-edit "${{ steps.pick.outputs.ref }}"; then
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            # uv.lock is the one upstream file we also write (dependency
+            # refresh for CVEs), and its conflict has a deterministic fix:
+            # take upstream's, then regenerate. Anything else is a human's job.
+            if [ "$conflicts" = "uv.lock" ]; then
+              echo "::notice::uv.lock conflicted - taking upstream's and regenerating"
+              git checkout --theirs uv.lock
+              uv lock --upgrade
+              git add uv.lock
+              git commit --no-edit
+            else
+              echo "::error::Merge of ${{ steps.pick.outputs.ref }} conflicts."
+              echo "::error::Conflicting paths below. Fork code lives only in"
+              echo "::error::src/netbox_mcp_server/writes/, tests/test_write_tools.py, FORK.md,"
+              echo "::error::.github/workflows/fork-* - a conflict elsewhere means that"
+              echo "::error::invariant was broken (see FORK.md). Resolve locally."
+              echo "$conflicts"
+              exit 1
+            fi
+          fi
+
+      - name: Refresh dependencies
+        if: steps.state.outputs.needed == 'true'
+        # Upstream's release cadence is not our security cadence: a merge that
+        # brings no dependency bump can still leave a fixable CVE in the image.
+        run: |
+          set -euo pipefail
+          uv lock --upgrade
+          if ! git diff --quiet uv.lock; then
+            git add uv.lock
+            git commit -m "chore(fork): refresh locked dependencies"
+          else
+            echo "uv.lock already current"
+          fi
+          git push --force-with-lease origin "${{ steps.pick.outputs.branch }}"
+
+      - name: Open PR
+        if: steps.state.outputs.needed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ steps.pick.outputs.ref }}
+          BRANCH: ${{ steps.pick.outputs.branch }}
+        run: |
+          set -euo pipefail
+          if gh pr view "$BRANCH" --json number >/dev/null 2>&1; then
+            echo "PR for $BRANCH already open, branch updated."
+            exit 0
+          fi
+          cat > /tmp/pr-body.md <<EOF
+          Merges upstream \`$REF\` into this fork.
+
+          The merge was clean, so no fork-owned file was touched - see FORK.md for
+          the invariant that makes that true.
+
+          Review checklist:
+          - upstream CHANGELOG for behaviour changes in the read tools
+          - \`src/netbox_mcp_server/server.py\` still exposes \`mcp\`, \`netbox\`,
+            \`NETBOX_OBJECT_TYPES\` and \`_get_endpoint_info\` - the write tools bind to
+            those, and \`test_upstream_api_surface_we_depend_on\` fails if they moved
+          - CI green (upstream's own Test & Lint job runs our tests too)
+
+          After merge, tag the release the image build consumes: \`v<upstream>-writes.<n>\`.
+          EOF
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore: merge upstream $REF" \
+            --body-file /tmp/pr-body.md
