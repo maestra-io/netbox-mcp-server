@@ -28,6 +28,18 @@ concurrency:
 
 jobs:
   tag:
+    # `workflow_dispatch` can be aimed at ANY ref, not just the default branch
+    # (`gh workflow run --ref <branch>`, or the branch picker in the UI). Without
+    # this guard a dispatch on an unmerged branch would check that branch out,
+    # diff it against the previous tag, and push a real `v<upstream>-writes.<n>`
+    # tag pointing at the unmerged commit — whereupon Renovate would open the
+    # bump in maestra-io/netbox and the image build would publish unreviewed code
+    # to ECR under an official fork release. The tag must only ever name a commit
+    # that is on `main`.
+    #
+    # Cheap to satisfy: `push` already filters to `main`, so this only ever
+    # rejects a misaimed manual run, and re-dispatching on `main` still works.
+    if: github.ref == 'refs/heads/main'
     name: Tag writes release
     runs-on: ubuntu-latest
     steps:
