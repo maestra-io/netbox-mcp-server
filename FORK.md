@@ -76,7 +76,22 @@ git merge v1.3.0            # expected: clean, only upstream files change
 uv sync --all-groups && uv run ruff check . && uv run ruff format --check . && uv run pytest
 ```
 
-Release tags are `<upstream-version>-writes.<n>`, e.g. `v1.2.1-writes.1`.
+## Release tags
+
+Release tags are `v<upstream-version>-writes.<n>`, e.g. `v1.2.1-writes.1`.
+
+`.github/workflows/fork-autotag.yml` mints them on every push to `main`, so
+merging the sync PR is the whole release. It derives `<upstream-version>` from
+`__version__` and increments `<n>` only when something under `src/`,
+`pyproject.toml`, `uv.lock` or `Dockerfile` changed since the previous tag — a
+docs or CI push does not burn a version.
+
+The tag is the contract with the image build: `maestra-io/netbox`
+`.github/workflows/netbox-mcp-server-image.yml` checks this fork out at that ref,
+builds it and pushes it to ECR. Renovate watches this repo's tags and opens the
+bump there, so nothing between a merged upstream sync and an image in ECR is a
+human step. (What runs in the cluster is still a separate hop — the Archestra
+platform owns those Deployments and no IaC pins their image.)
 
 ## The tools
 
