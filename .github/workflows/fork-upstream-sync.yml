@@ -139,7 +139,9 @@ jobs:
             those, and \`test_upstream_api_surface_we_depend_on\` fails if they moved
           - CI green (upstream's own Test & Lint job runs our tests too)
 
-          After merge, tag the release the image build consumes: \`v<upstream>-writes.<n>\`.
+          Merging is the whole release: \`fork-autotag.yml\` mints the
+          \`v<upstream>-writes.<n>\` tag the image build consumes, and Renovate opens
+          the bump in \`maestra-io/netbox\` from it.
           EOF
           gh pr create \
             --base main \

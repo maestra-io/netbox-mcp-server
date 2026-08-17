@@ -1,0 +1,113 @@
+name: Fork - tag writes release
+
+# Mints the `v<upstream-version>-writes.<n>` tag that the image build in
+# maestra-io/netbox checks out. Without it the tag was a human step, and a
+# forgotten one left the deployed image silently pinned to an old fork commit
+# while `fork-upstream-sync.yml` kept merging upstream into main.
+#
+# It has to be push-triggered, not a step in fork-upstream-sync.yml: that
+# workflow only OPENS the sync PR, it never observes the merge (a human merges
+# it, possibly days later, possibly alongside other commits). `push: main` is
+# the only event that sees the merged tree.
+#
+# Idempotent by construction: the tag is derived from the tree, not from the
+# event. Re-running it on an already-tagged commit, or on a push that changed
+# nothing the image contains, is a no-op.
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-autotag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    # `workflow_dispatch` can be aimed at ANY ref, not just the default branch
+    # (`gh workflow run --ref <branch>`, or the branch picker in the UI). Without
+    # this guard a dispatch on an unmerged branch would check that branch out,
+    # diff it against the previous tag, and push a real `v<upstream>-writes.<n>`
+    # tag pointing at the unmerged commit — whereupon Renovate would open the
+    # bump in maestra-io/netbox and the image build would publish unreviewed code
+    # to ECR under an official fork release. The tag must only ever name a commit
+    # that is on `main`.
+    #
+    # Cheap to satisfy: `push` already filters to `main`, so this only ever
+    # rejects a misaimed manual run, and re-dispatching on `main` still works.
+    if: github.ref == 'refs/heads/main'
+    name: Tag writes release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+
+      - name: Decide the tag
+        id: decide
+        run: |
+          set -euo pipefail
+
+          # Upstream's version, maintained by upstream's own semantic-release.
+          # Read from __init__.py because that is what python-semantic-release
+          # rewrites (pyproject.toml:project.version is the same value; keeping
+          # one source avoids the two disagreeing mid-release-PR).
+          version="$(sed -n 's/^__version__ = "\([^"]*\)".*/\1/p' src/netbox_mcp_server/__init__.py)"
+          [ -n "$version" ] || { echo "::error::could not read __version__"; exit 1; }
+          base="v${version}-writes"
+
+          # Newest existing writes tag for THIS upstream version. Numeric sort on
+          # the suffix only - `sort -V` over the whole tag would rank
+          # v1.2.1-writes.10 below v1.2.1-writes.9 on some coreutils, and the
+          # suffix is a plain counter anyway.
+          n="$(git tag --list "${base}.*" \
+                 | sed "s|^${base}\.||" \
+                 | grep -E '^[0-9]+$' \
+                 | sort -n | tail -1 || true)"
+
+          if [ -z "$n" ]; then
+            echo "No ${base}.* tag yet - first writes release for upstream ${version}."
+            echo "tag=${base}.1" >> "$GITHUB_OUTPUT"
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          prev="${base}.${n}"
+          if [ "$(git rev-parse "${prev}^{commit}")" = "$(git rev-parse HEAD)" ]; then
+            echo "HEAD is already ${prev} - nothing to tag."
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Only mint a tag when something the IMAGE actually contains changed.
+          # A docs/CI-only push must not burn a version: every new tag costs a
+          # Renovate PR and an ECR push in maestra-io/netbox for a byte-identical
+          # image. These four paths are what the Dockerfile copies + builds from.
+          if git diff --quiet "${prev}" HEAD -- src pyproject.toml uv.lock Dockerfile; then
+            echo "No change under src/, pyproject.toml, uv.lock or Dockerfile since ${prev} - nothing to tag."
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "tag=${base}.$((n + 1))" >> "$GITHUB_OUTPUT"
+          echo "needed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push the tag
+        if: steps.decide.outputs.needed == 'true'
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git tag -a "$TAG" -m "Fork release $TAG
+
+          Upstream $(sed -n 's/^__version__ = "\([^"]*\)".*/\1/p' src/netbox_mcp_server/__init__.py) plus the write tools (see FORK.md).
+          Consumed by maestra-io/netbox .github/workflows/netbox-mcp-server-image.yml."
+          git push origin "$TAG"
+          echo "::notice::Tagged $TAG - Renovate will open the tag bump in maestra-io/netbox."
