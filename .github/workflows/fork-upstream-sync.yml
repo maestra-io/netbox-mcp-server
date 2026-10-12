@@ -119,6 +119,9 @@ jobs:
         if: steps.state.outputs.needed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          # The checkout has an `upstream` remote, so gh would target netboxlabs
+          # (createPullRequest: Resource not accessible by integration).
+          GH_REPO: ${{ github.repository }}
           REF: ${{ steps.pick.outputs.ref }}
           BRANCH: ${{ steps.pick.outputs.branch }}
         run: |
