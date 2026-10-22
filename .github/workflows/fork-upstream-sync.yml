@@ -27,9 +27,9 @@ jobs:
     name: Merge upstream
     runs-on: runs-on=${{ github.run_id }}/pool=small
     steps:
-      - uses: runs-on/action@v2
+      - uses: runs-on/action@17b59092eb37ebfdbb034460892887c09100eaa3 # v2.5.0
       - name: Checkout fork
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
 
