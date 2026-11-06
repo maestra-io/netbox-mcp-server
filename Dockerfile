@@ -1,20 +1,26 @@
 FROM python:3.14-alpine3.24@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72 AS builder
 
-RUN pip install --root-user-action=ignore --no-cache-dir --upgrade pip \
-    && pip install --root-user-action=ignore --no-cache-dir uv
-
-ENV UV_LINK_MODE=copy
+# maestra: uv is bind-mounted (not pip-installed from PyPI) and every package
+# comes from nora, the only index (pyproject.toml), with the BuildKit secret
+# PRIVATE_PACKAGES_TOKEN as its password (issues-maestra#1649).
+ENV UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never UV_INDEX_MAESTRA_USERNAME=token
 
 WORKDIR /app
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    --mount=type=bind,from=ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0,source=/uv,target=/usr/local/bin/uv \
+    --mount=type=secret,id=PRIVATE_PACKAGES_TOKEN,required=true \
+    UV_INDEX_MAESTRA_PASSWORD="$(cat /run/secrets/PRIVATE_PACKAGES_TOKEN)" \
     uv sync --locked --no-install-project --no-dev
 
 COPY . /app
 
 RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,from=ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0,source=/uv,target=/usr/local/bin/uv \
+    --mount=type=secret,id=PRIVATE_PACKAGES_TOKEN,required=true \
+    UV_INDEX_MAESTRA_PASSWORD="$(cat /run/secrets/PRIVATE_PACKAGES_TOKEN)" \
     uv sync --locked --no-dev
 
 

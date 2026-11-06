@@ -27,6 +27,11 @@ dev = [
     "ruff>=0.15.16",
 ]
 
+[[tool.uv.index]]
+name = "maestra"
+url = "https://packages.maestra.io/simple/"
+default = true
+
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
 version_variables = ["src/netbox_mcp_server/__init__.py:__version__"]

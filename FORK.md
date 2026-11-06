@@ -26,7 +26,7 @@ upstream does not use:
 | `FORK.md` | this file |
 | `.github/workflows/fork-*.yml` | fork automation |
 
-No hunks in `server.py`, `pyproject.toml`, `Dockerfile` or anywhere else, so
+No hunks in `server.py` or anywhere else (except the two exceptions below), so
 `git merge upstream/<tag>` reduces to fast-forwarding upstream's own files. A
 conflict outside those paths means the invariant was broken.
 
@@ -45,6 +45,22 @@ git checkout --theirs uv.lock && uv lock --upgrade && git add uv.lock
 
 `fork-upstream-sync.yml` does exactly that by itself when `uv.lock` is the *only*
 conflicted path, and fails for anything else.
+
+**Second exception: packages only through nora** (issues-maestra#1649). Every
+Python package comes from `packages.maestra.io`, so the fork carries small hunks
+in upstream files:
+
+| File | Hunk |
+|---|---|
+| `pyproject.toml` | the `[[tool.uv.index]]` block `maestra` (`default = true`) |
+| `uv.lock` | resolved through that index, so every URL is nora's |
+| `Dockerfile` | uv bind-mounted from `ghcr.io/astral-sh/uv` instead of `pip install uv`; both `uv sync` steps read the BuildKit secret `PRIVATE_PACKAGES_TOKEN` |
+| `.github/workflows/test.yml`, `container-scan.yaml` | `maestra-io/github-actions/uv-nora` (OIDC token for nora), `uv sync --locked` |
+
+They sit away from the lines upstream releases touch (version, FROM digests), so
+a merge stays clean; the `uv.lock` conflict resolves as below, and the
+regenerated lock comes from nora because the merged `pyproject.toml` keeps the
+index. Anything that builds the image (`maestra-io/netbox`) passes the secret.
 
 Hold `ruff` at the version upstream's lock pins (`--upgrade-package ruff==<theirs>`).
 Upstream's CI runs `ruff format --check .` across the repo including its own
