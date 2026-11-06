@@ -17,6 +17,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write # uv-nora: OIDC token for packages.maestra.io
 
 concurrency:
   group: fork-upstream-sync
@@ -69,7 +70,15 @@ jobs:
 
       - name: Setup uv
         if: steps.state.outputs.needed == 'true'
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: "0.13.6"
+          enable-cache: false
+
+      # uv lock resolves through nora only (pyproject.toml [[tool.uv.index]]).
+      - name: uv through nora
+        if: steps.state.outputs.needed == 'true'
+        uses: maestra-io/github-actions/uv-nora@22ccbf9ff3d76fe13025cbc009d395024f025198 # v1.67.0
 
       - name: Merge upstream into a branch
         if: steps.state.outputs.needed == 'true'
@@ -93,8 +102,9 @@ jobs:
               echo "::error::Merge of ${{ steps.pick.outputs.ref }} conflicts."
               echo "::error::Conflicting paths below. Fork code lives only in"
               echo "::error::src/netbox_mcp_server/writes/, tests/test_write_tools.py, FORK.md,"
-              echo "::error::.github/workflows/fork-* - a conflict elsewhere means that"
-              echo "::error::invariant was broken (see FORK.md). Resolve locally."
+              echo "::error::.github/workflows/fork-*, plus the nora hunks FORK.md lists"
+              echo "::error::(pyproject.toml index, Dockerfile, test.yml, container-scan.yaml)."
+              echo "::error::A conflict elsewhere means that invariant was broken. Resolve locally."
               echo "$conflicts"
               exit 1
             fi
