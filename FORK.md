@@ -54,13 +54,14 @@ in upstream files:
 |---|---|
 | `pyproject.toml` | the `[[tool.uv.index]]` block `maestra` (`default = true`) |
 | `uv.lock` | resolved through that index, so every URL is nora's |
-| `Dockerfile` | uv bind-mounted from `ghcr.io/astral-sh/uv` instead of `pip install uv`; both `uv sync` steps read the BuildKit secret `PRIVATE_PACKAGES_TOKEN` |
-| `.github/workflows/test.yml`, `container-scan.yaml` | `maestra-io/github-actions/uv-nora` (OIDC token for nora), `uv sync --locked` |
+| `Dockerfile` | uv bind-mounted from `packages.maestra.io/ghcr/astral-sh/uv` instead of `pip install uv`; both `uv sync` steps read the BuildKit secret `PRIVATE_PACKAGES_TOKEN`; the `FROM` images are `packages.maestra.io/docker-hub/library/python` (same tag and digest) and the runtime `apk` runs through `nora-apk` |
+| `.github/workflows/test.yml`, `container-scan.yaml` | `maestra-io/github-actions/uv-nora` (OIDC token for nora), `uv sync --locked`; `container-scan` also has the nora docker credential helper for the base images |
 
-They sit away from the lines upstream releases touch (version, FROM digests), so
-a merge stays clean; the `uv.lock` conflict resolves as below, and the
-regenerated lock comes from nora because the merged `pyproject.toml` keeps the
-index. Anything that builds the image (`maestra-io/netbox`) passes the secret.
+They sit away from the lines upstream releases touch (version), except the two
+`FROM` lines: an upstream digest bump conflicts there and resolves by taking
+upstream's digest under the `packages.maestra.io/docker-hub/library/` prefix;
+the `uv.lock` conflict resolves as below, and the regenerated lock comes from
+nora because the merged `pyproject.toml` keeps the index. Anything that builds the image (`maestra-io/netbox`) passes the secret.
 
 Hold `ruff` at the version upstream's lock pins (`--upgrade-package ruff==<theirs>`).
 Upstream's CI runs `ruff format --check .` across the repo including its own
