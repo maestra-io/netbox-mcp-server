@@ -1,14 +1,11 @@
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
   extends: [
-    'github>netboxlabs/renovate',
     'config:recommended',
     ':dependencyDashboard',
     ':semanticCommits',
     'github>maestra-io/renovate-config:externalImages',
   ],
-  // Schedule inherited from central config.js (before 4am UTC on weekdays)
-
   labels: ['dependencies'],
 
   // Bump lower bounds in pyproject.toml even when the constraint already allows the new version
