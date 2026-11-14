@@ -67,7 +67,7 @@ jobs:
           # <<< nora-cred-helper
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: maestra-io/github-actions/setup-buildx@695d3e1cf135034b04c21640c13273f24867f24b # v1.85.0
 
       # maestra: the Dockerfile installs from nora with this token (BuildKit
       # secret); it lives 360 s, so it is minted right before the build.
