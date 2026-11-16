@@ -105,14 +105,18 @@ def _changelog_message(data: dict | None) -> str | None:
     email = access.verified_email()
     if email is None:
         raise ValueError(WRITE_REFUSAL)
-    why = " ".join(reason.current_reason.get().split())
+    head = f"via netbox-mcp by {email}"
     caller = str((data or {}).get("changelog_message") or "").strip()
-    message = (
-        f"via netbox-mcp by {email}"
-        + (f" (reason: {why})" if why else "")
-        + (f": {caller}" if caller else "")
+    tail = f": {caller}" if caller else ""
+    # NetBox rejects NUL and lone surrogates; the reason must never fail a write,
+    # so it keeps printable characters only and takes only the room the caller's
+    # message leaves free.
+    why = " ".join(
+        "".join(c if c.isprintable() else " " for c in reason.current_reason.get()).split()
     )
-    return message[:CHANGELOG_MESSAGE_MAX]
+    room = CHANGELOG_MESSAGE_MAX - len(head) - len(tail) - len(" (reason: )")
+    middle = f" (reason: {why[:room]})" if why and room > 0 else ""
+    return (head + middle + tail)[:CHANGELOG_MESSAGE_MAX]
 
 
 def _attributed(data: dict) -> tuple[dict, str | None]:

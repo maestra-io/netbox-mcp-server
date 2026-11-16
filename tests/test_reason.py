@@ -133,7 +133,22 @@ def test_the_reason_goes_next_to_the_person_in_the_changelog(capsys, access_mode
     _call(_probe(), "netbox_update_object", {**arguments, "data": data, "reason": "y" * 500})
     message = access_mode.calls[1]["changelog_message"]
     assert message.startswith(f"via netbox-mcp by {EMAIL} (reason: yyy")
+    assert message.endswith("): ticket 4137")
     assert len(message) == write_tools.CHANGELOG_MESSAGE_MAX
+
+
+def test_control_characters_in_the_reason_never_reach_netbox(access_mode):
+    arguments = {"object_type": "ipam.prefix", "object_id": 7, "data": {"description": "x"}}
+    result = _call(
+        _probe(),
+        "netbox_update_object",
+        {**arguments, "reason": "fix\x00rack \x1b[31m\ud800 \u200b"},
+    )
+
+    assert not result.is_error
+    message = access_mode.calls[0]["changelog_message"]
+    assert message == f"via netbox-mcp by {EMAIL} (reason: fix rack [31m)"
+    assert message.isprintable()
 
 
 def test_no_reason_leaves_the_changelog_as_before(access_mode):
