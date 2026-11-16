@@ -3,18 +3,33 @@
 Run as ``python -m netbox_mcp_server.writes`` instead of the upstream
 ``netbox-mcp-server`` console script. Registration happens before upstream's
 main() builds the NetBox client and starts the transport, so everything after
-it is unmodified upstream behaviour.
+it is unmodified upstream behaviour. Cloudflare Access mode (access.py), when
+its env is set, is switched on first; see FORK.md.
 
 Deliberately NOT wired into the image's CMD or into pyproject's
 [project.scripts]: leaving every upstream file untouched is what makes upstream
 merges conflict-free. The deployment selects this entry point instead.
 """
 
-from netbox_mcp_server.server import main
-from netbox_mcp_server.writes import write_tools
+import os
+
+from netbox_mcp_server import server as upstream
+from netbox_mcp_server.config import Settings
+from netbox_mcp_server.server import main, parse_cli_args
+from netbox_mcp_server.writes import access, write_tools
+
+
+def _transport_settings() -> tuple[str | None, bool]:
+    """(transport, MCP_AUTH_TOKEN set) as upstream main() will see them."""
+    try:
+        settings = Settings(**parse_cli_args())
+    except Exception:  # main() reports the same error itself
+        return None, False
+    return settings.transport, settings.mcp_auth_token is not None
 
 
 def run() -> None:
+    access.enable_from_env(os.environ, upstream.mcp, _transport_settings)
     write_tools.register()
     main()
 

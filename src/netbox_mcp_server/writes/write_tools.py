@@ -35,6 +35,7 @@ from typing import Any
 import httpx
 
 from netbox_mcp_server import server as upstream
+from netbox_mcp_server.writes import access
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,37 @@ def _describe_http_error(exc: httpx.HTTPStatusError) -> str:
     return f"NetBox returned HTTP {status}{hint}: {body[:2000]}"
 
 
+WRITE_REFUSAL = (
+    "Refused: this tool changes NetBox and needs a person to attribute it to, but the "
+    "Cloudflare Access token names none (a service token). Call it through the MCP "
+    "portal signed in as a person."
+)
+CHANGELOG_MESSAGE_MAX = 200  # NetBox ObjectChange.message max_length
+
+
+def _changelog_message(data: dict | None) -> str | None:
+    """The changelog message naming the verified person, or None outside Access mode.
+
+    NetBox 4.4+ records a ``changelog_message`` sent with a write in the
+    ObjectChange it creates (docs: integrations/rest-api, "Changelog Messages").
+    The verified email goes first so a caller-supplied message cannot hide it.
+    Access mode with no person refuses the write before any NetBox call.
+    """
+    if not access.enabled():
+        return None
+    email = access.verified_email()
+    if email is None:
+        raise ValueError(WRITE_REFUSAL)
+    caller = str((data or {}).get("changelog_message") or "").strip()
+    message = f"via netbox-mcp by {email}" + (f": {caller}" if caller else "")
+    return message[:CHANGELOG_MESSAGE_MAX]
+
+
+def _attributed(data: dict) -> tuple[dict, str | None]:
+    message = _changelog_message(data)
+    return (data if message is None else {**data, "changelog_message": message}), message
+
+
 def _call(action: str, object_type: str, fn: Any) -> Any:
     try:
         return fn()
@@ -114,8 +146,9 @@ def netbox_create_object(object_type: str, data: dict) -> dict:
                               "description": "example"})
     """
     endpoint = _resolve_endpoint(object_type)
+    data, message = _attributed(data)
     result = _call("create", object_type, lambda: _client().create(endpoint, data))
-    logger.info("created %s id=%s", object_type, result.get("id"))
+    logger.info("created %s id=%s (%s)", object_type, result.get("id"), message or "unattributed")
     return result
 
 
@@ -146,8 +179,9 @@ def netbox_update_object(object_type: str, object_id: int, data: dict) -> dict:
                              {"description": "webhooks-gate egress"})
     """
     endpoint = _resolve_endpoint(object_type)
+    data, message = _attributed(data)
     result = _call("update", object_type, lambda: _client().update(endpoint, object_id, data))
-    logger.info("updated %s id=%s", object_type, object_id)
+    logger.info("updated %s id=%s (%s)", object_type, object_id, message or "unattributed")
     return result
 
 
@@ -180,6 +214,7 @@ def netbox_delete_object(object_type: str, object_id: int, confirm_display: str)
         netbox_delete_object("ipam.ipaddress", 1475, "177.28.2.16/32")
     """
     endpoint = _resolve_endpoint(object_type)
+    message = _changelog_message(None)
     client = _client()
 
     current = _call("read-before-delete", object_type, lambda: client.get(endpoint, id=object_id))
@@ -194,14 +229,29 @@ def netbox_delete_object(object_type: str, object_id: int, confirm_display: str)
             "Nothing was deleted. Re-read the object and pass its exact 'display' value."
         )
 
-    _call("delete", object_type, lambda: client.delete(endpoint, object_id))
-    logger.info("deleted %s id=%s (%s)", object_type, object_id, actual_display)
+    _call("delete", object_type, lambda: _delete(client, endpoint, object_id, message))
+    logger.info(
+        "deleted %s id=%s (%s) (%s)",
+        object_type,
+        object_id,
+        actual_display,
+        message or "unattributed",
+    )
     return {
         "deleted": True,
         "object_type": object_type,
         "object_id": object_id,
         "object": current,
     }
+
+
+def _delete(client: Any, endpoint: str, object_id: int, message: str | None) -> None:
+    """Upstream's delete sends no body; an attributed delete carries the message."""
+    if message is None:
+        client.delete(endpoint, object_id)
+        return
+    url = client._build_url(endpoint, object_id)
+    client.session.request("DELETE", url, json={"changelog_message": message}).raise_for_status()
 
 
 WRITE_TOOLS = (netbox_create_object, netbox_update_object, netbox_delete_object)
