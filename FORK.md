@@ -21,8 +21,8 @@ upstream does not use:
 
 | Path | What |
 |---|---|
-| `src/netbox_mcp_server/writes/` | the write tools and their entry point |
-| `tests/test_write_tools.py` | their tests |
+| `src/netbox_mcp_server/writes/` | the write tools, Cloudflare Access mode (`access.py`) and their entry point |
+| `tests/test_write_tools.py`, `tests/test_access.py`, `tests/conftest.py` | their tests |
 | `FORK.md` | this file |
 | `.github/workflows/fork-*.yml` | fork automation |
 
@@ -130,3 +130,41 @@ surface NetBox's own validation errors rather than a bare status code.
 NetBox permissions are the real enforcement layer: the token's user needs
 `add`/`change`/`delete` object permissions or every write is a 403, whatever the
 token's write flag says.
+
+## Cloudflare Access mode
+
+For the HTTP transport behind a Cloudflare tunnel and an Access application
+(`netbox-mcp.maestrateam.io`, issues-maestra#1768). Off unless the variables
+below are set, so the stdio deployment is unchanged. Same env names and rules
+as maestra-io/kargo-mcp `src/access.ts`.
+
+| Variable | Value |
+|---|---|
+| `CF_ACCESS_AUD` | Application Audience (AUD) tag of the Access app for the host |
+| `CF_ACCESS_TEAM_DOMAIN` | bare host `<team>.cloudflareaccess.com` (ours: `maestra-io.cloudflareaccess.com`) |
+
+Either one defined without a usable pair, Access with `TRANSPORT=stdio`, or
+Access next to `MCP_AUTH_TOKEN` makes `python -m netbox_mcp_server.writes` exit 1
+instead of starting open.
+
+When on, every request to `/mcp` needs `Cf-Access-Jwt-Assertion`, verified by
+FastMCP's `JWTVerifier`: RS256 against `https://<team>/cdn-cgi/access/certs`
+(cached 1 h, refetched on an unknown `kid`, so a key rotation lands at once; a
+failed fetch refuses the request and logs a warning), `iss` = `https://<team>`,
+`aud` = `CF_ACCESS_AUD`, `exp` required, `nbf` with 30 s of skew. The token is
+read from that header only: a client `Authorization` header is dropped, a
+repeated Access header counts as none. Anything else is a `401`.
+
+| Request | Answer |
+|---|---|
+| no token, forged, expired, foreign audience, repeated header | `401`, nothing reaches NetBox |
+| valid token with `email` | read and write tools run |
+| valid service token (no `email`) | read tools run; **write tools refuse** before any NetBox call |
+
+NetBox is still called with the shared service token (`NETBOX_TOKEN`). Each
+write carries `changelog_message: "via netbox-mcp by <email>[: <caller's
+message>]"` (NetBox 4.4+, max 200 characters, the email first so a caller's
+message cannot hide it), so the NetBox changelog shows the person next to the
+service user. Delete sends it in the `DELETE` body. Outside Access mode no
+message is added and the calls are byte-for-byte upstream's.
+
