@@ -35,7 +35,7 @@ from typing import Any
 import httpx
 
 from netbox_mcp_server import server as upstream
-from netbox_mcp_server.writes import access
+from netbox_mcp_server.writes import access, reason
 
 logger = logging.getLogger(__name__)
 
@@ -95,16 +95,23 @@ def _changelog_message(data: dict | None) -> str | None:
 
     NetBox 4.4+ records a ``changelog_message`` sent with a write in the
     ObjectChange it creates (docs: integrations/rest-api, "Changelog Messages").
-    The verified email goes first so a caller-supplied message cannot hide it.
-    Access mode with no person refuses the write before any NetBox call.
+    The verified email goes first so a caller-supplied message cannot hide it,
+    then the agent's optional ``reason`` of this call (reason.py), then the
+    caller's message. Access mode with no person refuses the write before any
+    NetBox call.
     """
     if not access.enabled():
         return None
     email = access.verified_email()
     if email is None:
         raise ValueError(WRITE_REFUSAL)
+    why = " ".join(reason.current_reason.get().split())
     caller = str((data or {}).get("changelog_message") or "").strip()
-    message = f"via netbox-mcp by {email}" + (f": {caller}" if caller else "")
+    message = (
+        f"via netbox-mcp by {email}"
+        + (f" (reason: {why})" if why else "")
+        + (f": {caller}" if caller else "")
+    )
     return message[:CHANGELOG_MESSAGE_MAX]
 
 

@@ -228,10 +228,11 @@ def test_module_entrypoint_registers_before_running(monkeypatch):
 
     monkeypatch.setattr(entry, "write_tools", write_tools)
     monkeypatch.setattr(entry, "main", lambda: order.append("main"))
+    monkeypatch.setattr(upstream.mcp, "add_middleware", lambda m: order.append(type(m).__name__))
 
     entry.run()
 
-    assert order == ["register", "main"]
+    assert order == ["AgentReasonMiddleware", "register", "main"]
 
 
 # --------------------------------------------------------------------------

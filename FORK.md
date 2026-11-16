@@ -21,8 +21,8 @@ upstream does not use:
 
 | Path | What |
 |---|---|
-| `src/netbox_mcp_server/writes/` | the write tools, Cloudflare Access mode (`access.py`) and their entry point |
-| `tests/test_write_tools.py`, `tests/test_access.py`, `tests/conftest.py` | their tests |
+| `src/netbox_mcp_server/writes/` | the write tools, Cloudflare Access mode (`access.py`), the optional agent `reason` (`reason.py`) and their entry point |
+| `tests/test_write_tools.py`, `tests/test_access.py`, `tests/test_reason.py`, `tests/conftest.py` | their tests |
 | `FORK.md` | this file |
 | `.github/workflows/fork-*.yml` | fork automation |
 
@@ -131,6 +131,20 @@ NetBox permissions are the real enforcement layer: the token's user needs
 `add`/`change`/`delete` object permissions or every write is a 403, whatever the
 token's write flag says.
 
+## The agent `reason`
+
+`python -m netbox_mcp_server.writes` adds an optional `reason` to every tool,
+read and write (`writes/reason.py`, issues-maestra#1768): the agent's context for
+the call. It is never required and never rejects a call, whatever its value
+(absent, empty, wrong type, overlong); a FastMCP middleware declares it in each
+input schema and removes it before FastMCP validates the arguments (FastMCP
+rejects an undeclared argument). Each call writes one JSON line to stderr:
+`{"msg": "tool call", "server": "netbox", "tool", "outcome", "latency_ms",
+"user", "user_source", "reason", "reason_present", "cf_ray"}`, with the reason
+clipped to 300 characters and `user` the verified Access email (Access mode
+only). No other argument and no result is logged. In Access mode a write puts
+the reason next to the email in its changelog message (below).
+
 ## Cloudflare Access mode
 
 For the HTTP transport behind a Cloudflare tunnel and an Access application
@@ -162,9 +176,9 @@ repeated Access header counts as none. Anything else is a `401`.
 | valid service token (no `email`) | read tools run; **write tools refuse** before any NetBox call |
 
 NetBox is still called with the shared service token (`NETBOX_TOKEN`). Each
-write carries `changelog_message: "via netbox-mcp by <email>[: <caller's
-message>]"` (NetBox 4.4+, max 200 characters, the email first so a caller's
-message cannot hide it), so the NetBox changelog shows the person next to the
+write carries `changelog_message: "via netbox-mcp by <email>[ (reason: <the
+agent's reason>)][: <caller's message>]"` (NetBox 4.4+, max 200 characters, the
+email first so a caller's message cannot hide it), so the NetBox changelog shows the person next to the
 service user. Delete sends it in the `DELETE` body. Outside Access mode no
 message is added and the calls are byte-for-byte upstream's.
 
