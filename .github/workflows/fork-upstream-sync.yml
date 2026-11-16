@@ -103,7 +103,7 @@ jobs:
               echo "::error::Conflicting paths below. Fork code lives only in"
               echo "::error::src/netbox_mcp_server/writes/, tests/test_write_tools.py, FORK.md,"
               echo "::error::.github/workflows/fork-*, plus the nora hunks FORK.md lists"
-              echo "::error::(pyproject.toml index, Dockerfile, test.yml, container-scan.yaml)."
+              echo "::error::(pyproject.toml index, Dockerfile, test.yml, container-scan.yaml, docker-publish.yml)."
               echo "::error::A conflict elsewhere means that invariant was broken. Resolve locally."
               echo "$conflicts"
               exit 1
