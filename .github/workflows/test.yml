@@ -15,14 +15,9 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
 
-    services:
-      netbox:
-        image: netboxcommunity/netbox:latest
-        env:
-          SKIP_SUPERUSER: true
-        ports:
-          - 8000:8080
-
+    # No NetBox service (issues-maestra#1649): the tests talk to a stub server (tests/conftest.py),
+    # and the upstream `netboxcommunity/netbox:latest` service, pulled from Docker Hub before any
+    # step and past nora, had no database to serve from.
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
