@@ -55,7 +55,7 @@ in upstream files:
 | `pyproject.toml` | the `[[tool.uv.index]]` block `maestra` (`default = true`) |
 | `uv.lock` | resolved through that index, so every URL is nora's |
 | `Dockerfile` | uv bind-mounted from `packages.maestra.io/ghcr/astral-sh/uv` instead of `pip install uv`; both `uv sync` steps read the BuildKit secret `PRIVATE_PACKAGES_TOKEN`; the `FROM` images are `packages.maestra.io/docker-hub/library/python` (same tag and digest) and the runtime `apk` runs through `nora-apk` |
-| `.github/workflows/test.yml`, `container-scan.yaml` | `maestra-io/github-actions/uv-nora` (OIDC token for nora), `uv sync --locked`; `container-scan` also has the nora docker credential helper for the base images |
+| `.github/workflows/test.yml`, `container-scan.yaml` | `maestra-io/github-actions/uv-nora` (OIDC token for nora), `uv sync --locked`; `container-scan` also has the nora docker credential helper for the base images, and scans with `maestra-io/github-actions/trivy-nora` instead of `aquasecurity/trivy-action` (same inputs; trivy and its DBs through nora) |
 | `.github/workflows/docker-publish.yml` | both `docker/setup-buildx-action` steps are `maestra-io/github-actions/setup-buildx` (BuildKit image from nora), `id-token: write` on `build`; an upstream bump of the setup-buildx pin conflicts there and resolves by keeping ours |
 
 They sit away from the lines upstream releases touch (version), except the two
