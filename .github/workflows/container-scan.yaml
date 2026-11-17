@@ -89,7 +89,7 @@ jobs:
           tags: netbox-mcp-server:scan
 
       - name: Scan image for vulnerabilities
-        uses: maestra-io/github-actions/trivy-nora@eeb0232e51c60769be4d623dfd8a4b6a4af8a9be # v1.95.0
+        uses: maestra-io/github-actions/trivy-nora@7fe2948b7c7d10886a60e07bca79968cc1c49627 # v1.95.2
         with:
           image-ref: netbox-mcp-server:scan
           format: json
