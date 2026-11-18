@@ -18,6 +18,7 @@ jobs:
     name: Open release PR
     runs-on: ubuntu-latest
     permissions:
+      id-token: write # setup-*-nora: the toolchain from nora
       contents: write
       pull-requests: write
 
@@ -27,7 +28,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        uses: maestra-io/github-actions/setup-uv-nora@f40b5191253ae7e28c10836989a77255666141e4 # v1.104.0
 
       - name: Compute next version and update files
         id: semrel
