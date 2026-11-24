@@ -143,8 +143,14 @@ jobs:
           digest=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" --format '{{json .Manifest}}' | jq -r .digest)
           echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
 
-      - name: Install cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      # GitHub Releases through nora (packages.maestra.io): 3-day hold, issues-maestra#1649.
+      # Bump the version and the sha256 (the release's asset digest) together.
+      - name: cosign through nora
+        uses: maestra-io/github-actions/nora-asset@bce883a9462ae1a0ec95b02ac797f223589ef7a5 # v1.115.0
+        with:
+          path: github/sigstore/cosign/releases/download/v3.0.6/cosign-linux-amd64
+          sha256: c956e5dfcac53d52bcf058360d579472f0c1d2d9b69f55209e256fe7783f4c74
+          bin: cosign
 
       - name: Sign published manifest with cosign (keyless)
         env:
